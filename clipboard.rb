@@ -277,8 +277,3 @@ module Example
     end
   end
 end
-
-text = Example::Clipboard.text
-puts "Clipboard text: #{text}"
-
-Example::Clipboard.text = 'Copy me!'
