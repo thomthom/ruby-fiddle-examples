@@ -150,6 +150,7 @@ module Example
 
       include Win32API
 
+
       def text
         open_clipboard do
           handle = User32.GetClipboardData(User32::CF_TEXT)
@@ -162,29 +163,28 @@ module Example
 
           end
 
-          # TODO: For some reason this seems to always return 1 - indicating it isn't
-          #       decrementing the lock count.
+          # This always return 1. My understanding is that it's because the
+          # clipboard still owned the data.
+          #
+          # https://docs.microsoft.com/en-us/windows/win32/dataxchg/using-the-clipboard#pasting-information-from-the-clipboard
+          #
+          # > The handle returned by GetClipboardData is still owned by the
+          # > clipboard, so an application must not free it or leave it locked.
+          #
+          # Most examples appear to never check the result of GlobalUnlock.
+          # Further reading:
           #
           # https://devblogs.microsoft.com/oldnewthing/20041108-00/?p=37363
           #
-          # > Moveability semantics were preserved. Memory blocks still had a lock
-          # > count, even though it didn’t really accomplish anything since Win32
-          # > never compacted memory. (Recall that the purpose of the lock count was
-          # > to prevent memory from moving during a compaction.)
+          # > Moveability semantics were preserved. Memory blocks still had a
+          # > lock count, even though it didn’t really accomplish anything since
+          # > Win32 never compacted memory. (Recall that the purpose of the lock
+          # > count was to prevent memory from moving during a compaction.)
           # ...
-          # > Consequently, the charade of locking must be maintained just in case
-          # > there’s some application that actually snoops at the lock count, or a
-          # > program that expected the GlobalReAlloc function to fail on a locked
-          # > block
-          # lock_count = Kernel32.GlobalUnlock(handle)
-          # if lock_count == 0
-          #   code = Kernel32.GetLastError
-          #   unless code == NO_ERROR
-          #     warn "Clipboard data unlock error! (Error code: #{code})"
-          #   end
-          # else
-          #   warn "Clipboard data not unlocked! (Count: #{lock_count})"
-          # end
+          # > Consequently, the charade of locking must be maintained just in
+          # > case there’s some application that actually snoops at the lock
+          # > count, or a program that expected the GlobalReAlloc function to
+          # > fail on a locked block
 
           clipboard_text
         end
@@ -193,47 +193,16 @@ module Example
       def text=(clipboard_text)
         # https://docs.microsoft.com/en-gb/windows/win32/dataxchg/using-the-clipboard
 
-        # StackOverflow Example:
-        #
-        # const char* output = "Test";
-        # const size_t len = strlen(output) + 1;
-        #
-        # HGLOBAL hMem =  GlobalAlloc(GMEM_MOVEABLE, len);
-        # memcpy(GlobalLock(hMem), output, len);
-        # GlobalUnlock(hMem);
-        #
-        # OpenClipboard(0);
-        # EmptyClipboard();
-        # SetClipboardData(CF_TEXT, hMem);
-        # CloseClipboard();
-
-        # While in C you get a NULL terminated string from a char* literal,
-        # it's not clear if Ruby provides this. Ruby can in some cases allow
-        # NULL characters in its strings. The US-ASCII encoding for instance is
-        # used to load binary data in Ruby.
-        #
-        # The Win32 clipboard assumes NULL means end of string. But with normal
-        # UTF-8 encoded strings we should be fine because UTF-8 doesn't use
-        # NULL bytes for anything other than code point 0.
-        #
-        # Note that we use `bytesize` here as `size` would return code points
-        # and not the number of char* we need to provide.
-        buffer_length = clipboard_text.bytesize
+        # Allow for the buffer to include a NULL byte at the end. The Win32 API
+        # appear to insert one at then end of the string, so if it's omitted
+        # in the size of the buffer the copied text will be clipped.
+        buffer_length = clipboard_text.bytesize + 1
 
         mem = Kernel32.GlobalAlloc(Kernel32::GMEM_MOVEABLE, buffer_length)
         raise ClipboardError, 'Unable to allocate global data' if mem == NULL
 
         global_lock(mem) do |address|
 
-          # C example:
-          #   memcpy(address, output, buffer_length)
-          #
-          # This looks to be the Fiddle way to do the same as memcpy.
-          # While we don't include the size + 1 to include the NULL character
-          # (which we aren't sure Ruby gives us) it appear that the Win32 API
-          # is handling this for us. When we get the text back from the
-          # clipboard the Pointer#to_s method seems to correctly stop where it
-          # should.
           pointer = Fiddle::Pointer.new(address)
           pointer[0, clipboard_text.bytesize] = clipboard_text
 
@@ -251,6 +220,7 @@ module Example
             handle = User32::SetClipboardData(User32::CF_TEXT, mem)
             assert_pointer(handle)
           end
+
         end
       end
 
@@ -279,10 +249,13 @@ module Example
           if lock_count == 0
             code = Kernel32.GetLastError
             unless code == NO_ERROR
-              warn "Clipboard data unlock error! (Error code: #{code})"
+              warn "Global data unlock error! (Error code: #{code})"
             end
           else
-            warn "Clipboard data not unlocked! (Count: #{lock_count})"
+            # Paste appear to make GlobalUnlock always return 1.
+            # From what I can determine, this is not a problem, but an artifact
+            # of very old compatibility behaviour.
+            # warn "Global data not unlocked! (Count: #{lock_count})"
           end
         end
       end
