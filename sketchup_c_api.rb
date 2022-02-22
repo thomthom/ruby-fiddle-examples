@@ -11,10 +11,8 @@ module SketchUpAPI
 end
 
 free = Fiddle::Function.new(Fiddle::RUBY_FREE, [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOID)
-su_api_major_p = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE, free)
-su_api_minor_p = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE, free)
+su_api_version_p = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE * 2, free)
 
-SketchUpAPI.SUGetAPIVersion(su_api_major_p, su_api_minor_p)
-su_api_major = su_api_major_p[0, Fiddle::SIZEOF_SIZE_T].unpack('Q').first
-su_api_minor = su_api_minor_p[0, Fiddle::SIZEOF_SIZE_T].unpack('Q').first
+SketchUpAPI.SUGetAPIVersion(su_api_version_p, su_api_version_p + 1)
+su_api_major, su_api_minor = su_api_version_p[0, Fiddle::SIZEOF_SIZE_T * 2].unpack('QQ')
 puts "SUGetAPIVersion: #{su_api_major}.#{su_api_minor}"
