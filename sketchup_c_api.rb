@@ -11,7 +11,7 @@ module SketchUpAPI
   when :platform_win
     sketchup_app = Sketchup.find_support_file('SketchUp.exe')
   else
-    raise NotImplemented, "#{Sketchup.platform} not supported"
+    raise NotImplementedError, "#{Sketchup.platform} not supported"
   end
 
   dlload sketchup_app
